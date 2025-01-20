@@ -45,8 +45,11 @@ def liberar_memoria(processo):
         if processo.id in tabela_memoria:
             disponibilidade_ram += tabela_memoria.pop(processo.id)
 
+# Supondo que esta seja a definição da tabela_processos
+tabela_processos = {}
+
 # Função para exibir a tabela de memória
-def exibir_tabela_memoria(processos_na_memoria):
+def exibir_tabela_memoria(processos_na_memoria, tabela_processos):
     print("\n=== Tabela de Memória ===")
     if not processos_na_memoria:
         print("Nenhum processo está ocupando a memória.\n")
@@ -55,11 +58,23 @@ def exibir_tabela_memoria(processos_na_memoria):
     tabela = []
     for processo_id in processos_na_memoria:
         ram = tabela_memoria.get(processo_id, "Desconhecido")
+        processo = tabela_processos.get(processo_id)  # Acessa o processo completo
+        if processo:
+            cpu1 = processo.cpu1
+            io = processo.io
+            cpu2 = processo.cpu2
+        else:
+            cpu1 = io = cpu2 = "Desconhecido"
+        
         tabela.append([
             processo_id,
+            cpu1,
+            io,
+            cpu2,
             ram,
         ])
-    print(tabulate(tabela, headers=["ID do Processo", "Memória Ocupada (MB)"], tablefmt="fancy_grid"))
+    
+    print(tabulate(tabela, headers=["ID do Processo", "CPU1", "IO", "CPU2", "Memória Ocupada (MB)"], tablefmt="fancy_grid"))
     print("\n")
 
 # Função para leitura de processos de um arquivo
@@ -79,11 +94,13 @@ def ler_processos_de_arquivo(caminho_arquivo):
                         novo_processo.estado = "Pronto"
                         fila_prontos.put(novo_processo)
                         print(f"Processo criado: {novo_processo}")
+                        tabela_processos[processo_id] = novo_processo  # Adiciona o processo à tabela_processos
                     else:
                         print(f"Memória insuficiente para criar o processo {novo_processo.id}")
 
                     processo_id += 1
-                    exibir_tabela_memoria(list(tabela_memoria.keys()))  # Passa os IDs dos processos na memória
+                    exibir_tabela_memoria(list(tabela_memoria.keys()), tabela_processos)  # Passa a tabela_processos
+
                 except ValueError:
                     print(f"Erro na linha '{linha}': formato inválido. Ignorando...")
     except FileNotFoundError:
@@ -180,6 +197,8 @@ def finalizar_processo(processo):
         print("Todos os processos foram concluídos. Encerrando o programa.")
         exit(0)  # Encerra o programa
 
+# Supondo que esta seja a definição da tabela_processos
+tabela_processos = {}
 
 # Inicialização das threads
 thread_despachante = threading.Thread(target=despachante)
