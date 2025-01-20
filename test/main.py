@@ -13,6 +13,7 @@ disponibilidade_ram = RAM_SIZE_MB
 fila_prontos = queue.Queue()
 fila_bloqueados = queue.Queue()
 tabela_memoria = {}  # Tabela para mapear processos e blocos de memória
+tabela_processos = {}  # Tabela para armazenar processos em execução
 
 # Lock para controle de acesso a recursos compartilhados
 lock = threading.Lock()
@@ -45,12 +46,13 @@ def liberar_memoria(processo):
         if processo.id in tabela_memoria:
             disponibilidade_ram += tabela_memoria.pop(processo.id)
 
-# Supondo que esta seja a definição da tabela_processos
-tabela_processos = {}
-
 # Função para exibir a tabela de memória
-def exibir_tabela_memoria(processos_na_memoria, tabela_processos):
+def exibir_tabela_memoria(processos_na_memoria):
     print("\n=== Tabela de Memória ===")
+    
+    # Exibe a quantidade de memória disponível
+    print(f"Memória Disponível: {disponibilidade_ram} MB\n")
+    
     if not processos_na_memoria:
         print("Nenhum processo está ocupando a memória.\n")
         return
@@ -66,14 +68,9 @@ def exibir_tabela_memoria(processos_na_memoria, tabela_processos):
         else:
             cpu1 = io = cpu2 = "Desconhecido"
         
-        tabela.append([
-            processo_id,
-            cpu1,
-            io,
-            cpu2,
-            ram,
-        ])
-    
+        tabela.append([processo_id, cpu1, io, cpu2, ram])
+
+    # Exibe a tabela com os processos e a memória ocupada
     print(tabulate(tabela, headers=["ID do Processo", "CPU1", "IO", "CPU2", "Memória Ocupada (MB)"], tablefmt="fancy_grid"))
     print("\n")
 
@@ -99,16 +96,17 @@ def ler_processos_de_arquivo(caminho_arquivo):
                         print(f"Memória insuficiente para criar o processo {novo_processo.id}")
 
                     processo_id += 1
-                    exibir_tabela_memoria(list(tabela_memoria.keys()), tabela_processos)  # Passa a tabela_processos
+                    exibir_tabela_memoria(list(tabela_memoria.keys()))  # Passa os IDs dos processos na memória
 
                 except ValueError:
                     print(f"Erro na linha '{linha}': formato inválido. Ignorando...")
+
     except FileNotFoundError:
         print(f"Erro: O arquivo '{caminho_arquivo}' não foi encontrado.")
     except Exception as e:
         print(f"Ocorreu um erro ao ler o arquivo: {e}")
 
-# Thread Despachante
+# Função para despachante (controle de CPU)
 def despachante():
     cpus_disponiveis = [True] * NUM_CPUS
 
@@ -128,18 +126,6 @@ def despachante():
 
 def executar_processo(processo, cpu_id, cpus_disponiveis):
     threading.Thread(target=processar, args=(processo, cpu_id, cpus_disponiveis)).start()
-
-def gerenciar_io():
-    while True:
-        if not fila_bloqueados.empty():
-            processo = fila_bloqueados.get()
-            time.sleep(processo.io)  # Simula o tempo necessário para concluir o I/O
-            processo.io = 0
-            processo.estado = "Pronto"
-            fila_prontos.put(processo)
-            print(f"Processo {processo.id}: de Bloqueado para Pronto após conclusão do I/O")
-        time.sleep(1)  # Intervalo para evitar alto uso de CPU
-
 
 def processar(processo, cpu_id, cpus_disponiveis):
     global lock
@@ -170,8 +156,21 @@ def processar(processo, cpu_id, cpus_disponiveis):
                     # Processo finalizado
                     finalizar_processo(processo)
 
-        cpus_disponiveis[cpu_id] = True
+        elif processo.cpu2 > 0:
+            # Fase 2: Execução da CPU2
+            tempo = min(processo.cpu2, QUANTUM)
+            time.sleep(tempo)
+            processo.cpu2 -= tempo
 
+            if processo.cpu2 > 0:
+                # Quantum expirado
+                fila_prontos.put(processo)
+                print(f"Processo {processo.id}: Quantum expirado, retornando à fila de prontos")
+            else:
+                print(f"Processo {processo.id}: Fase 2 de CPU concluída")
+                finalizar_processo(processo)
+
+        cpus_disponiveis[cpu_id] = True
 
 def gerenciar_io():
     while True:
@@ -197,9 +196,6 @@ def finalizar_processo(processo):
         print("Todos os processos foram concluídos. Encerrando o programa.")
         exit(0)  # Encerra o programa
 
-# Supondo que esta seja a definição da tabela_processos
-tabela_processos = {}
-
 # Inicialização das threads
 thread_despachante = threading.Thread(target=despachante)
 thread_io = threading.Thread(target=gerenciar_io)
@@ -207,5 +203,7 @@ thread_io = threading.Thread(target=gerenciar_io)
 # Executar entrada de processos por arquivo
 thread_io.start()
 thread_despachante.start()
+
 ler_processos_de_arquivo('test/processes.txt')
+
 thread_despachante.join()
